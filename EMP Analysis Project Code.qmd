@@ -1,0 +1,285 @@
+---
+title: "Empirical Economic Analysis Project"
+output: html_document
+---
+
+## Education Inequality and How it Will Affect GDP of Different Countries
+
+**Project Background**
+
+Analyzing education inequality is essential in understanding its potential impact on the GDP of different countries. Education plays a pivotal role in shaping a nation's economic prospects by fostering human capital development, which is a critical ingredient for innovation, productivity, and sustained economic growth. The hypothesis that education inequality might correlate with GDP variations stems from the theory that unequal access to quality education can lead to disparities in skill levels across the population, affecting the overall economic performance. By examining the relationship between education inequality and GDP, this project aims to uncover insights into how disparities in educational opportunities may influence a country's economic trajectory. This analysis is not only relevant for economic theorists and policymakers but also for addressing broader issues of social equity and sustainable development. The outcomes of this project could provide evidence-based recommendations for reducing education inequality as a strategy to enhance economic growth and stability.
+
+**Analytical Approach**
+
+**Data Collection:** Gather data on GDP growth rates, education inequality indices, and potential control variables for a broad set of countries over ten years.
+
+**Statistical Analysis:** Use regression analysis or a difference-in-differences approach to isolate the impact of education inequality on GDP growth, controlling for other variables.
+
+**Interpretation:** Discuss how education inequality might influence GDP growth through mechanisms like reduced labor market skills, lower innovation, and decreased economic mobility.
+
+**Key data items from the GDP_Inequality_dataset**
+
+-   Year
+
+-   ISO3 - ISO3 for the Country/Territory
+
+-   Country - Name of the Country/Territory
+
+-   HumanDevGroups - Human Development Groups
+
+-   UNDPDevRegions - UNDP Developing Regions
+
+-   HDIRank..2021. - Human Development Index Rank for 2021
+
+-   Inequality - Inequality in Education for year
+
+-   GDP - GDP per capita (PPP) constant 2017 international
+
+**Data Dictionary**
+
+-   UNDP Developing Regions:
+
+    -   SSA - Sub-Saharan Africa
+
+    -   LAC - Latin America and the Caribbean
+
+    -   EAP - East Asia and the Pacific
+
+    -   AS - Arab States
+
+    -   ECA - Europe and Central Asia
+
+    -   SA - South Asia
+
+### 
+
+## Housekeeping
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls()) # clear workspace
+cat("\014")  # clear console
+library(knitr)
+library(rmarkdown)
+library(haven)
+library(ggplot2)
+library(plm)
+library(psych)
+library(gplots)
+library(car)
+library(dplyr)
+library(readxl)
+library(ggthemes)
+library(fastDummies)
+```
+
+# Using datasets
+
+## Load data
+
+```{r}
+Inequality_data <- read.csv("Inequality_in_Education-2.csv")
+gdp_data <- read.csv("gdp-per-capita-worldbank.csv")
+```
+
+We found the **Inequality in Education** data from kaggle. This dataset contains historical data covering a range of indicators pertaining to educational inequality on a global scale. The **GDP(Economic Growth)** data we found is from ourworldindata.org. This dataset contains economic growth covering a global scale. To pair with another data set, we only obtained relevant data from 2010 to 2021.
+
+**Inequality in Education:** <https://www.kaggle.com/datasets/iamsouravbanerjee/inequality-in-education-around-the-world>
+
+**GDP(Economic Growth):** <https://ourworldindata.org/economic-growth#all-charts>
+
+## DAG
+
+**Outcome: *GDP Growth Rate (Field Name: "GDP")***
+
+**Concept:** The outcome variable we're interested in is the effect of education inequality on the GDP growth rate of different countries.
+
+**Description:** This measures the annual increase or decrease in the value of all goods and services produced by an economy, expressed as a percentage. It's a direct indicator of economic health and progress.
+
+**Treatment:** ***Education Inequality (Field Name: "Inequality")***
+
+**Concept:** The treatment in this study is the level of education inequality within a country.
+
+**Description:** This could be quantified using indices that measure disparities in educational attainment, such as the Gini coefficient applied to years of schooling or disparities in educational access and quality among different socio-economic groups.
+
+**Treatment Effect:** ***Impact of Education Inequality on GDP Growth***
+
+**Concept:** The treatment effect is the impact that changes in education inequality have on GDP growth rates across different countries.
+
+**Description:** Assessing how variations in education inequality (treatment) are associated with changes in GDP growth rates (outcome) across countries. This involves comparing GDP growth rates in countries with high education inequality to those with low education inequality.
+
+## Merge and Clean the Datasets
+
+```{r}
+threshold = 30000
+GDP_Inequality_dataset <- merge(Inequality_data, gdp_data, by.x = c("Year", "ISO3"), by.y = c("Year", "Code"))
+GDP_Inequality_dataset <- subset(GDP_Inequality_dataset, select = -Entity)
+GDP_Inequality_dataset <- GDP_Inequality_dataset %>% select(-UNDPDevRegions)
+GDP_Inequality_dataset <- na.omit(GDP_Inequality_dataset)
+GDP_Inequality_dataset <- GDP_Inequality_dataset %>%
+  rename(GDP = GDP.per.capita..PPP..constant.2017.international...)%>%
+  mutate(treatment = ifelse(GDP > threshold, 1, 0))
+GDP_Inequality_dataset <- dummy_cols(GDP_Inequality_dataset, select_columns = 'HumanDevGroups')
+names(GDP_Inequality_dataset)[names(GDP_Inequality_dataset) == "HDIRank..2021."] <- "HDIRank_2021"
+GDP_Inequality_dataset
+```
+
+## Calculate the average GDP and average Inequality for each country
+
+```{r}
+average_gdp_values <- GDP_Inequality_dataset %>%
+  group_by(Country) %>%
+  summarise(Average_GDP = mean(GDP, na.rm = TRUE))
+print(average_gdp_values)
+
+average_Inequality_values <- GDP_Inequality_dataset %>%
+  group_by(Country) %>%
+  summarise(Average_Inequality = mean(Inequality, na.rm = TRUE))
+print(average_Inequality_values)
+
+```
+
+## Pooled OLS
+
+```{r}
+# Fit the linear regression model with existing dummy variables
+model_ols <- lm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium, data = GDP_Inequality_dataset)
+
+# Plot the data
+plot(GDP_Inequality_dataset$Inequality, GDP_Inequality_dataset$GDP, 
+     main = "OLS Regression Results", 
+     xlab = "Inequality Rate", ylab = "GDP Rate")
+abline(model_ols, col = "steelblue")
+
+# Print summary of the regression model
+summary(model_ols)
+
+```
+
+The regression analysis reveals that while education inequality's impact on GDP (-17.05) is not statistically significant (p-value: 0.605), suggesting the relationship between education inequality and GDP might be complex or influenced by factors not captured in the model, the coefficients for human development groups indicate a significant negative association with GDP. Specifically, compared to the reference category, being classified in the high, medium, and low human development groups decreases GDP by 27,914.90, 35,063.97, and 38,347.11 units, respectively, all of which are statistically significant (p-value: \<2e-16). This suggests a clear negative relationship between these development categories and GDP levels, indicating that countries within these human development groups tend to have lower GDPs compared to the baseline group. The non-significant impact of education inequality on GDP suggests exploring indirect effects or the influence of additional variables not considered in this model might provide further insights.
+
+## DIM
+
+```{r}
+temp <- GDP_Inequality_dataset %>%
+  group_by(treatment) %>%
+  summarise(meanGDP = mean(GDP),
+            meanInequality = mean(Inequality))
+DiM_Inequality <- diff(temp$meanInequality)
+cat("Difference in Means for Inequality:", DiM_Inequality)
+```
+
+This result indicates that there is a decrease in the mean level of inequality of 15.16285 units when moving from one treatment group to the other. This finding suggests that the treatment might be associated with a reduction in inequality, assuming the treatment groups are defined in a way that reflects different levels or types of interventions or conditions that could influence inequality levels.
+
+## DID
+
+```{r}
+GDP_Inequality_dataset<-GDP_Inequality_dataset %>% group_by(Country)
+
+
+DiD <- lm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium + treatment,data = GDP_Inequality_dataset)
+
+summary(DiD)
+```
+
+This regression analysis suggests significant impacts of human development group categorizations and the treatment variable on GDP, with the treatment variable notably enhancing GDP. In contrast, the effect of inequality on GDP is not statistically significant within this model. The strong model fit suggests that these variables, collectively, are important predictors of GDP in the dataset. However, the non-significant relationship between inequality and GDP still calls for further investigation.
+
+## LSDV
+
+```{r}
+DiD.LSDV <- lm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium + factor(Country) + factor(Year), data=GDP_Inequality_dataset)
+summary(DiD.LSDV)
+```
+
+The LSDV model reveals a significant relationship between education inequality and GDP, with inequality positively associated with GDP when controlling for country and year-fixed effects. The negative coefficients for the human development groups suggest that higher human development, as categorized, is associated with lower GDP compared to the baseline group, within the context of this model. The inclusion of country and year-fixed effects allows for a more nuanced understanding of GDP's determinants by accounting for unobserved heterogeneity across countries and over time. This model's high R-squared value indicates a strong fit, suggesting that it captures most of the variability in GDP across the countries and years included in the analysis.
+
+## Country FE
+
+```{r}
+GDP_Inequality.panel<- pdata.frame(GDP_Inequality_dataset, index = "Country")
+DiD.FE.Country <- plm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium, data=GDP_Inequality.panel, model="within",effect = "twoways")
+summary(DiD.FE.Country)
+```
+
+## Test if country FE is required
+
+```{r}
+DiD.Pooled<-lm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium, data = GDP_Inequality_dataset)
+pFtest(DiD.FE.Country,DiD.Pooled)
+```
+
+We can know from the test that Country FE is helpful.
+
+## Year FE
+
+```{r}
+GDP_Inequality.panel2<- pdata.frame(GDP_Inequality_dataset, index = "Year")
+DiD.FE.Year <- plm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium, data=GDP_Inequality.panel2, model="within",effect = "twoways")
+summary(DiD.FE.Year)
+```
+
+## Test if Year FE is required
+
+```{r}
+pFtest(DiD.FE.Year,DiD.Pooled)
+```
+
+We can know from the test that Year FE is helpful too.
+
+## CountryYear FE
+
+```{r}
+GDP_Inequality.panel<- pdata.frame(GDP_Inequality_dataset, index = c("Country","Year"))
+DiD.FE.CountryYear <- plm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium, data=GDP_Inequality.panel, model="within",effect = "twoways")
+summary(DiD.FE.CountryYear)
+```
+
+## Test if CountryYear FE is required
+
+```{r}
+pFtest(DiD.FE.CountryYear,DiD.Pooled)
+```
+
+## DID2
+
+```{r}
+Did2.FE <- plm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium, 
+               data = GDP_Inequality_dataset, 
+               index = c("Country", "Year"),
+               model = "within")
+
+Did2.TwoFE <- plm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium, 
+                  data = GDP_Inequality_dataset, 
+                  index = c("Country", "Year"),
+                  model = "within", 
+                  effect = "twoways")
+
+summary(Did2.FE)
+summary(Did2.TwoFE)
+```
+
+-   The one-way fixed effects model shows a negative but insignificant coefficient for educational inequality, suggesting a potential inverse relationship, although with low explanatory power (R-squared = 0.0019456).  
+
+-   The two-way fixed effects model indicates a significant positive relationship, with higher educational inequality linked to higher GDP per capita after controlling for country-specific and temporal factors (R-squared = 0.0099548).
+
+The two-way fixed effects model (Did2.TwoFE) is more significant and more accurately captures the impact of educational inequality on GDP than the one-way fixed effects model (Did2.FE).
+
+## Sensitivity Analysis
+
+```{r}
+DiD2.LSDV.CountryyYear.HDI<-lm(GDP ~ Inequality + HumanDevGroups_High + HumanDevGroups_Low + HumanDevGroups_Medium + factor(Country) + factor(Year) + HDIRank_2021 + treatment, data = GDP_Inequality_dataset)
+summary(DiD2.LSDV.CountryyYear.HDI)
+
+library(sensemakr)
+did.sensitivity<-sensemakr(model = DiD2.LSDV.CountryyYear.HDI, 
+             treatment = "treatment", 
+          benchmark_covariate = "HumanDevGroups_High",
+            kd = 1:3,
+            ky = 1:3, 
+            q = 1,
+            alpha = 0.1, 
+            reduce = TRUE)
+did.sensitivity
+```
+
+The model shows a significant positive treatment effect on GDP, supported by a strong model fit with an R-squared of 0.9911. Sensitivity analysis confirms the robustness of this treatment effect against potential unobserved confounders, indicating that the findings are reliable.
